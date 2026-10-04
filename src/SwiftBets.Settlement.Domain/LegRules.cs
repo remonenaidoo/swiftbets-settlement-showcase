@@ -28,6 +28,29 @@ public static class LegRules
             }),
             MarketType.SetHandicap or MarketType.Handicap => Handicap(selectionId, home - away),
             MarketType.TotalPoints => Total(selectionId, home + away),
+            MarketType.TotalGoalsOverUnder15 or MarketType.TotalGoalsOverUnder35 => Total(selectionId, home + away),
+            MarketType.BothTeamsToScore => Won(selectionId switch
+            {
+                SelectionIds.Yes => home > 0 && away > 0,
+                SelectionIds.No => home == 0 || away == 0,
+                _ => throw Unknown(selectionId),
+            }),
+            MarketType.DoubleChance => Won(selectionId switch
+            {
+                SelectionIds.HomeDraw => home >= away,
+                SelectionIds.HomeAway => home != away,
+                SelectionIds.DrawAway => away >= home,
+                _ => throw Unknown(selectionId),
+            }),
+            MarketType.DrawNoBet => home == away ? LegOutcome.Void : Won(selectionId switch
+            {
+                SelectionIds.Home => home > away,
+                SelectionIds.Away => away > home,
+                _ => throw Unknown(selectionId),
+            }),
+            MarketType.CorrectScore => Won(selectionId == SelectionIds.OtherScore
+                ? home > SelectionIds.CorrectScoreMax || away > SelectionIds.CorrectScoreMax
+                : selectionId.StartsWith("score:", StringComparison.Ordinal) ? selectionId == SelectionIds.Score(home, away) : throw Unknown(selectionId)),
             MarketType.TotalGames => result.HomeGames is { } hg && result.AwayGames is { } ag ? Total(selectionId, hg + ag) : LegOutcome.Void,
             _ => Won(selectionId switch
             {

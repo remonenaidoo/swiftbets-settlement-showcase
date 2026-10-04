@@ -30,4 +30,32 @@ public sealed class LegRulesTests
         LegRules.Evaluate("f-mw", "home", level).ShouldBe(LegOutcome.Void);
         LegRules.Evaluate("f-topbat", "player-jos-buttler", level).ShouldBe(LegOutcome.Void);
     }
+
+    private static FixtureResult Score(int home, int away) => new("f", 1, ResultState.Official, home, away);
+
+    [Theory]
+    [InlineData("f-btts", "yes", 1, 1, LegOutcome.Won)]
+    [InlineData("f-btts", "yes", 2, 0, LegOutcome.Lost)]
+    [InlineData("f-dc", "homeDraw", 1, 1, LegOutcome.Won)]
+    [InlineData("f-dc", "drawAway", 2, 1, LegOutcome.Lost)]
+    [InlineData("f-dnb", "away", 0, 1, LegOutcome.Won)]
+    [InlineData("f-dnb", "home", 0, 1, LegOutcome.Lost)]
+    [InlineData("f-ou15", "over:1.5", 1, 1, LegOutcome.Won)]
+    [InlineData("f-ou15", "over:1.5", 1, 0, LegOutcome.Lost)]
+    [InlineData("f-ou35", "under:3.5", 2, 1, LegOutcome.Won)]
+    [InlineData("f-ou35", "under:3.5", 3, 1, LegOutcome.Lost)]
+    [InlineData("f-cs", "score:2-1", 2, 1, LegOutcome.Won)]
+    [InlineData("f-cs", "score:2-1", 1, 2, LegOutcome.Lost)]
+    [InlineData("f-cs", "other", 4, 0, LegOutcome.Won)]
+    [InlineData("f-cs", "other", 3, 3, LegOutcome.Lost)]
+    public void Football_markets_settle_from_the_final_score(string marketId, string selectionId, int home, int away, LegOutcome expected) =>
+        LegRules.Evaluate(marketId, selectionId, Score(home, away)).ShouldBe(expected);
+
+    [Fact]
+    public void Draw_no_bet_on_a_draw_is_void_and_an_unknown_selection_is_refused()
+    {
+        LegRules.Evaluate("f-dnb", "home", Score(1, 1)).ShouldBe(LegOutcome.Void);
+        Should.Throw<ArgumentOutOfRangeException>(() => LegRules.Evaluate("f-btts", "maybe", Score(1, 1)));
+        Should.Throw<ArgumentOutOfRangeException>(() => LegRules.Evaluate("f-cs", "2-1", Score(2, 1)));
+    }
 }
