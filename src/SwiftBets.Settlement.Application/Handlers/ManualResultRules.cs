@@ -40,7 +40,7 @@ public static class ManualResultRules
         return BuilderRules.Evaluate(builder, c =>
             c.MarketId == manual.MarketId || (manual.MarketId is null && voids) ? Outcome(manual, leg with { MarketId = c.MarketId, SelectionId = c.SelectionId })
             : manual.MarketId is null && c.SelectionId == manual.WinningSelectionId ? LegOutcome.Won
-            : feed is { IsSettleable: true } ? LegRules.Evaluate(c.SelectionId, feed) : null);
+            : feed is { IsSettleable: true } ? LegRules.Evaluate(c.MarketId, c.SelectionId, feed) : null);
     }
 
     public static StoredManualResult From(ManualResultV1 manual, int version) =>

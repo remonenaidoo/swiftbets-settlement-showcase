@@ -43,7 +43,7 @@ public sealed class IndexCouponHandler(ISettlementStore store, TimeProvider time
         {
             if (results.TryGetValue(leg.FixtureId, out var result) && result.IsSettleable)
             {
-                await EvaluateAsync(transaction, leg, result.Version, BuilderRules.Evaluate(leg.SelectionId, leg.BuilderLeg, result));
+                await EvaluateAsync(transaction, leg, result.Version, BuilderRules.Evaluate(leg.MarketId, leg.SelectionId, leg.BuilderLeg, result));
             }
         }
 

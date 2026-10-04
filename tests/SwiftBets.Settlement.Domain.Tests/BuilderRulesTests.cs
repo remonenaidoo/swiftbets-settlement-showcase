@@ -15,4 +15,10 @@ public sealed class BuilderRulesTests
     [Fact]
     public void A_lost_component_loses_the_leg_even_while_others_are_unknown() =>
         BuilderRules.Evaluate(Three, c => c.SelectionId == "home" ? LegOutcome.Lost : null).ShouldBe(new LegVerdict(LegOutcome.Lost));
+
+    [Fact]
+    public void Builder_components_settle_by_their_own_market_type() =>
+        BuilderRules.Evaluate("f-bb", "bb", new BetBuilderLegV1(
+                [new("f-hcp", "home:-1.5", 2m), new("f-pts", "over:200.5", 2m)], new Dictionary<string, decimal>(), 0m),
+            new FixtureResult("f", 1, ResultState.Official, 110, 100)).ShouldBe(new LegVerdict(LegOutcome.Won));
 }

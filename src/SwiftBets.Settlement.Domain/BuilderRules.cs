@@ -36,6 +36,6 @@ public static class BuilderRules
     }
 
     /// <summary>The leg against a feed result: a builder per component, any other leg by its selection.</summary>
-    public static LegVerdict Evaluate(string selectionId, BetBuilderLegV1? builder, FixtureResult result) =>
-        builder is null ? new LegVerdict(LegRules.Evaluate(selectionId, result)) : Evaluate(builder, c => LegRules.Evaluate(c.SelectionId, result));
+    public static LegVerdict Evaluate(string marketId, string selectionId, BetBuilderLegV1? builder, FixtureResult result) =>
+        builder is null ? new LegVerdict(LegRules.Evaluate(marketId, selectionId, result)) : Evaluate(builder, c => LegRules.Evaluate(c.MarketId, c.SelectionId, result));
 }
