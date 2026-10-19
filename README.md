@@ -1,6 +1,6 @@
 # swiftbets-settlement
 
-[![ci](https://github.com/remonenaidoo/swiftbets-settlement/actions/workflows/ci.yml/badge.svg)](https://github.com/remonenaidoo/swiftbets-settlement/actions/workflows/ci.yml)
+[![ci](https://github.com/remonenaidoo/swiftbets-settlement-showcase/actions/workflows/ci.yml/badge.svg)](https://github.com/remonenaidoo/swiftbets-settlement-showcase/actions/workflows/ci.yml)
 
 Settlement for SwiftBets: indexes open legs by fixture, evaluates legs when results arrive (priority-gated by result version), counts resolved legs with token-guarded Lua counters in Redis, and settles coupons in a second stage off Kafka. A reconciler repairs Redis/SQL divergence and raises stuck coupons; unprocessable messages park on an inbound DLQ while the partition keeps flowing.
 
@@ -31,18 +31,15 @@ Every host exposes `/health/live`, `/health/ready` (checks its real dependencies
 ## Build and test
 
 ```bash
-../swiftbets-platform/scripts/fetch-shared-packages.sh .   # or pack-local.sh for unreleased shared changes
+scripts/fetch-shared-packages.sh .   # the shared packages, from public releases
 dotnet test SwiftBets.Settlement.slnx
 ```
 
-Integration tests use Testcontainers and need Docker. The whole platform runs from `swiftbets-platform` with `make up`.
+Integration tests use Testcontainers and need Docker.
 
-## Images
+## Part of SwiftBets
 
-Multi-arch (amd64 + arm64), non-root, chiseled runtime:
-
-- `ghcr.io/remonenaidoo/swiftbets-settlement`
-- `ghcr.io/remonenaidoo/swiftbets-settlement-migrator`
+SwiftBets is a sportsbook and casino platform built as independent .NET services. It runs live at [swiftbets.remonenaidoo.com](https://swiftbets.remonenaidoo.com). These repositories show a selection of it: [Wallet](https://github.com/remonenaidoo/swiftbets-wallet-showcase) · [Originals](https://github.com/remonenaidoo/swiftbets-originals-showcase) · [Steward](https://github.com/remonenaidoo/swiftbets-steward-showcase) · [Building blocks](https://github.com/remonenaidoo/swiftbets-building-blocks-showcase) · [Contracts](https://github.com/remonenaidoo/swiftbets-contracts-showcase).
 
 ## License
 
