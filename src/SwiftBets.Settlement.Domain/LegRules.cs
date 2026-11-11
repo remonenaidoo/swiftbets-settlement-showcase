@@ -2,11 +2,7 @@ using SwiftBets.Contracts.Offer;
 
 namespace SwiftBets.Settlement.Domain;
 
-/// <summary>
-/// Resolves a leg from its market and selection ids alone (offer contract): the market id's suffix names the type, a line
-/// selection carries its line (<c>home:-1.5</c>, <c>over:215.5</c>). A line bet that lands exactly on the line pushes and
-/// is void; a two-way winner market that ends level is void; a player or outright market with no named winner is void.
-/// </summary>
+/// <summary>Resolves a leg from its market and selection ids alone; a line selection carries its line (<c>home:-1.5</c>, <c>over:215.5</c>).</summary>
 public static class LegRules
 {
     public static LegOutcome Evaluate(string marketId, string selectionId, FixtureResult result)
@@ -27,8 +23,7 @@ public static class LegRules
                 _ => throw Unknown(selectionId),
             }),
             MarketType.SetHandicap or MarketType.Handicap => Handicap(selectionId, home - away),
-            MarketType.TotalPoints => Total(selectionId, home + away),
-            MarketType.TotalGoalsOverUnder15 or MarketType.TotalGoalsOverUnder35 => Total(selectionId, home + away),
+            MarketType.TotalPoints or MarketType.TotalGoalsOverUnder15 or MarketType.TotalGoalsOverUnder35 => Total(selectionId, home + away),
             MarketType.BothTeamsToScore => Won(selectionId switch
             {
                 SelectionIds.Yes => home > 0 && away > 0,
@@ -52,6 +47,7 @@ public static class LegRules
                 ? home > SelectionIds.CorrectScoreMax || away > SelectionIds.CorrectScoreMax
                 : selectionId.StartsWith("score:", StringComparison.Ordinal) ? selectionId == SelectionIds.Score(home, away) : throw Unknown(selectionId)),
             MarketType.TotalGames => result.HomeGames is { } hg && result.AwayGames is { } ag ? Total(selectionId, hg + ag) : LegOutcome.Void,
+            // Match result (1x2) and over/under 2.5, including market ids with no type suffix.
             _ => Won(selectionId switch
             {
                 SelectionIds.Home => home > away,
@@ -64,7 +60,7 @@ public static class LegRules
         };
     }
 
-    /// <summary>The side's margin plus its line: above zero wins, zero pushes (void), below loses.</summary>
+    // A line bet that lands exactly on its line pushes, which settles as void.
     private static LegOutcome Handicap(string selectionId, int homeMargin)
     {
         if (!SelectionIds.TryParseLine(selectionId, out var side, out var line) || side is not (SelectionIds.Home or SelectionIds.Away))

@@ -19,7 +19,8 @@ internal static class SettlementMapping
     {
         DomainLegOutcome.Won => Contracts.Settlement.LegOutcome.Won,
         DomainLegOutcome.Lost => Contracts.Settlement.LegOutcome.Lost,
-        _ => Contracts.Settlement.LegOutcome.Void,
+        DomainLegOutcome.Void => Contracts.Settlement.LegOutcome.Void,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
     };
 
     public static Contracts.Settlement.CouponOutcome Map(DomainOutcome outcome) => outcome switch
@@ -27,6 +28,7 @@ internal static class SettlementMapping
         DomainOutcome.Won => Contracts.Settlement.CouponOutcome.Won,
         DomainOutcome.Lost => Contracts.Settlement.CouponOutcome.Lost,
         DomainOutcome.CashedOut => Contracts.Settlement.CouponOutcome.CashedOut,
-        _ => Contracts.Settlement.CouponOutcome.Void,
+        DomainOutcome.Void => Contracts.Settlement.CouponOutcome.Void,
+        _ => throw new ArgumentOutOfRangeException(nameof(outcome), outcome, null),
     };
 }
