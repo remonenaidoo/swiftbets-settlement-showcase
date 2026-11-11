@@ -27,8 +27,8 @@ app.UseSwiftBetsWeb();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapSwiftBetsOperationalEndpoints();
-app.MapGet("/coupons/{couponId:guid}/state", async (Guid couponId, ISettlementStore store, HttpContext context, CancellationToken cancellationToken) =>
-        await store.GetCouponStateAsync(couponId, cancellationToken) is { } state
+app.MapGet("/coupons/{couponId:guid}/state", async (Guid couponId, CouponStateQuery query, HttpContext context, CancellationToken cancellationToken) =>
+        await query.GetAsync(couponId, cancellationToken) is { } state
             ? Results.Json(state, ContractJson.Options)
             : Error.NotFound("coupon_not_found", "Settlement has not indexed that coupon.").ToHttpResult(context))
     .RequireAuthorization(Roles.OperatorOrService);

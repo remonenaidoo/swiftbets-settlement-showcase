@@ -5,24 +5,25 @@ using SwiftBets.Settlement.Domain;
 
 namespace SwiftBets.Settlement.Application.Handlers;
 
-/// <summary>
-/// Finds divergence between Redis progress and SQL truth: coupons fully evaluated in SQL but never (re)settled, and
-/// legs whose result landed without being evaluated. It repairs them from SQL, and reports each as a stuck coupon.
-/// </summary>
+/// <summary>Repairs Redis/SQL divergence from SQL: legs a result never evaluated, and coupons evaluated but never (re)settled.</summary>
 public sealed class ReconcileHandler(ISettlementStore store, IProgressCounter counter, CouponSettler settler, TimeProvider time)
 {
+    private const int BatchSize = 200;
+
     public async Task<int> ReconcileAsync(TimeSpan quietFor, CancellationToken cancellationToken)
     {
         var repaired = 0;
-        foreach (var (leg, result) in await store.FindUnevaluatedLegsAsync(200, cancellationToken))
+        foreach (var (leg, result) in await store.FindUnevaluatedLegsAsync(BatchSize, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await using var transaction = await store.BeginAsync();
             await transaction.RecordEvaluationAsync(leg, result.Version, BuilderRules.Evaluate(leg.MarketId, leg.SelectionId, leg.BuilderLeg, result), time);
             await transaction.CommitAsync();
         }
 
-        foreach (var couponId in await store.FindUnsettledCouponsAsync(quietFor, 200, cancellationToken))
+        foreach (var couponId in await store.FindUnsettledCouponsAsync(quietFor, BatchSize, cancellationToken))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             repaired += await RepairAsync(couponId, "evaluated_but_unsettled") ? 1 : 0;
         }
 
