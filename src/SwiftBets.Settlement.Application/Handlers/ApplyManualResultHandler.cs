@@ -1,28 +1,22 @@
 using Microsoft.Extensions.Logging;
 using SwiftBets.Contracts.Messaging;
-using LegEvaluatedV1 = SwiftBets.Contracts.Settlement.LegEvaluatedV1;
 using SwiftBets.Contracts.Trading;
 using SwiftBets.Settlement.Application.Ports;
 
 namespace SwiftBets.Settlement.Application.Handlers;
 
-/// <summary>
-/// A trader's result evaluates every leg in scope at a manual version above any feed version, so a later feed result
-/// cannot undo it and the settler resettles as usual. A cashed-out coupon is final: it is rejected explicitly, never
-/// re-evaluated. Idempotent on <c>ManualResultId</c>.
-/// </summary>
+/// <summary>A trader's result evaluates every leg in scope at a version above any feed version, so a later feed result cannot undo it.</summary>
 public sealed partial class ApplyManualResultHandler(ISettlementStore store, TimeProvider time, ILogger<ApplyManualResultHandler> logger)
 {
     public const string Consumer = "settlement.manual-results";
 
     private static readonly DateTimeOffset VersionEpoch = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
-    /// <summary>Feed versions stay far below this; later manual results get higher versions.</summary>
+    // Feed versions stay far below a million; later manual results get higher versions.
     public static int ManualVersion(DateTimeOffset issuedAt) => 1_000_000 + (int)Math.Max(0, (issuedAt - VersionEpoch).TotalSeconds);
 
     public async Task<int> HandleAsync(ManualResultV1 manual)
     {
-        ArgumentNullException.ThrowIfNull(manual);
         if (manual.Action == ManualResultAction.TimeVoid && manual.VoidFrom is null)
         {
             LogTimeVoidWithoutCutOff(logger, manual.ManualResultId);
@@ -49,11 +43,8 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
 
         foreach (var leg in touched.Where(t => t.FinalState is null).Select(t => t.Leg))
         {
-            var verdict = ManualResultRules.Verdict(stored, leg, feed);
-            if (verdict.Outcome is { } outcome && await transaction.TryInsertEvaluationAsync(leg, version, outcome, verdict.Odds))
+            if (await transaction.RecordEvaluationAsync(leg, version, ManualResultRules.Verdict(stored, leg, feed), time))
             {
-                await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
-                    new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, version, SettlementMapping.Map(outcome), time.GetUtcNow()));
                 evaluated++;
             }
         }
@@ -62,11 +53,7 @@ public sealed partial class ApplyManualResultHandler(ISettlementStore store, Tim
         return evaluated;
     }
 
-    /// <summary>
-    /// The legs this result would change. A time-void touches only coupons placed at or after the cut-off; a coupon with
-    /// no stored placement time (indexed before settlement 0004) is never voided on a guess, only counted and logged.
-    /// Cashed-out coupons are included so the caller can reject them explicitly instead of skipping them silently.
-    /// </summary>
+    // Cashed-out coupons are included so the caller rejects them explicitly rather than skipping them silently.
     private async Task<IReadOnlyList<TimedLeg>> LegsTouchedAsync(ISettlementTransaction transaction, ManualResultV1 manual, StoredManualResult stored)
     {
         var inScope = (await transaction.GetTimedLegsForFixtureAsync(manual.FixtureId)).Where(t => ManualResultRules.InScope(stored, t.Leg)).ToList();
