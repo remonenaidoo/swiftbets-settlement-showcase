@@ -1,16 +1,11 @@
 using SwiftBets.BuildingBlocks.Core;
-using SwiftBets.Contracts.Messaging;
 using SwiftBets.Contracts.Offer;
-using SwiftBets.Contracts.Settlement;
 using SwiftBets.Settlement.Application.Ports;
 using SwiftBets.Settlement.Domain;
 
 namespace SwiftBets.Settlement.Application.Handlers;
 
-/// <summary>
-/// Stage one. A result passes the priority gate only if it outranks the stored one; a duplicate or stale result is a
-/// no-op. Each affected leg is evaluated and a leg-evaluated event is written to the outbox in the same transaction.
-/// </summary>
+/// <summary>Stage one: a result that outranks the stored one evaluates every leg on its fixture; anything else is a no-op.</summary>
 public sealed class EvaluateResultHandler(ISettlementStore store, IFaultPoint faults, TimeProvider time)
 {
     public const string Consumer = "settlement.evaluator";
@@ -40,10 +35,8 @@ public sealed class EvaluateResultHandler(ISettlementStore store, IFaultPoint fa
                 foreach (var leg in await transaction.GetLegsForFixtureAsync(result.FixtureId))
                 {
                     var verdict = BuilderRules.Evaluate(leg.MarketId, leg.SelectionId, leg.BuilderLeg, result);
-                    if (verdict.Outcome is { } outcome && await transaction.TryInsertEvaluationAsync(leg, result.Version, outcome, verdict.Odds))
+                    if (await transaction.RecordEvaluationAsync(leg, result.Version, verdict, time))
                     {
-                        await transaction.EnqueueAsync(Topics.LegEvaluated, leg.CouponId.ToString(),
-                            new LegEvaluatedV1(leg.CouponId, leg.LegId, leg.FixtureId, result.Version, SettlementMapping.Map(outcome), time.GetUtcNow()));
                         evaluated++;
                     }
                 }
