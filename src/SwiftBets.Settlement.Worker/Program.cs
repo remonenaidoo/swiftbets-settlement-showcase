@@ -1,11 +1,8 @@
 using SwiftBets.BuildingBlocks.Observability;
 using SwiftBets.BuildingBlocks.Web;
 using SwiftBets.Settlement.Application;
-using SwiftBets.Settlement.Application.Handlers;
-using SwiftBets.Settlement.Application.Ports;
-using SwiftBets.Contracts.Errors;
-using SwiftBets.Contracts.Serialization;
 using SwiftBets.Settlement.Infrastructure;
+using SwiftBets.Settlement.Worker;
 using SwiftBets.Settlement.Worker.Grpc;
 
 if (HealthProbe.TryRun(args) is { } probeExitCode)
@@ -27,29 +24,11 @@ app.UseSwiftBetsWeb();
 app.UseAuthentication();
 app.UseAuthorization();
 app.MapSwiftBetsOperationalEndpoints();
-app.MapGet("/coupons/{couponId:guid}/state", async (Guid couponId, CouponStateQuery query, HttpContext context, CancellationToken cancellationToken) =>
-        await query.GetAsync(couponId, cancellationToken) is { } state
-            ? Results.Json(state, ContractJson.Options)
-            : Error.NotFound("coupon_not_found", "Settlement has not indexed that coupon.").ToHttpResult(context))
-    .RequireAuthorization(Roles.OperatorOrService);
-app.MapPost("/internal/integrity/settlements", async (IntegrityRequest request, ISettlementStore store, HttpContext context, CancellationToken cancellationToken) =>
-        request.CouponIds is not { Count: > 0 and <= 500 }
-            ? Error.Validation("invalid_coupon_ids", "Send 1 to 500 coupon ids.").ToHttpResult(context)
-            : Results.Ok((await store.GetSettlementDigestAsync(request.CouponIds, cancellationToken)).Select(d => new
-            {
-                d.CouponId, d.Version, Outcome = System.Text.Json.JsonNamingPolicy.CamelCase.ConvertName(d.Outcome.ToString()), d.Payout, d.SettledAt,
-            })))
-    .RequireAuthorization(Roles.Service);
+app.MapSettlementEndpoints();
 app.MapGrpcService<CashoutGrpcService>();
 app.MapSwiftBetsFaultEndpoints();
-app.MapPost("/coupons/{couponId:guid}/refresh", async (Guid couponId, ReconcileHandler reconciler) =>
-        Results.Ok(new { couponId, resettled = await reconciler.RepairAsync(couponId, "operator_refresh") }))
-    .RequireAuthorization(Roles.OperatorOrService);
 
 await app.RunAsync();
 return 0;
 
 public partial class Program;
-
-/// <summary>Coupons bet-history wants the latest settlement of.</summary>
-internal sealed record IntegrityRequest(IReadOnlyList<Guid>? CouponIds);
