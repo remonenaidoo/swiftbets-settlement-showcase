@@ -2,12 +2,13 @@ using Dapper;
 using Microsoft.Data.SqlClient;
 using SwiftBets.BuildingBlocks.Outbox;
 using SwiftBets.BuildingBlocks.Persistence;
+using SwiftBets.Settlement.Application.Integrity;
 using SwiftBets.Settlement.Application.Ports;
 using SwiftBets.Settlement.Domain;
 
 namespace SwiftBets.Settlement.Infrastructure.Persistence;
 
-public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbox outbox, IInboxStore inbox, TimeProvider time, IProgressCounter? progress = null) : ISettlementStore
+public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbox outbox, IInboxStore inbox, TimeProvider time) : ISettlementStore
 {
     private static readonly SqlResources Sql = SqlResources.For<SqlSettlementStore>();
 
@@ -23,23 +24,23 @@ public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbo
         return [.. await connection.QueryAsync<Guid>(new CommandDefinition(Sql.Get("Settle.FindUnsettled"), new { Limit = limit, Cutoff = time.GetUtcNow() - quietFor }, cancellationToken: cancellationToken))];
     }
 
-    public async Task<IReadOnlyList<(IndexedLeg Leg, FixtureResult Result)>> FindUnevaluatedLegsAsync(int limit, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<UnevaluatedLeg>> FindUnevaluatedLegsAsync(int limit, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
-        var rows = await connection.QueryAsync<(Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds, string ResultFixtureId, int ResultVersion, byte State, int HomeGoals, int AwayGoals, int? HomeGames, int? AwayGames, string? Winners, string? Builder)>(
+        var rows = await connection.QueryAsync<UnevaluatedLegRow>(
             new CommandDefinition(Sql.Get("Settle.FindUnevaluated"), new { Limit = limit, Since = time.GetUtcNow().AddHours(-1) }, cancellationToken: cancellationToken));
-        return [.. rows.Select(r => (new IndexedLeg(r.LegId, r.CouponId, r.FixtureId, r.MarketId, r.SelectionId, r.Odds, Builder: r.Builder), new FixtureResult(r.ResultFixtureId, r.ResultVersion, (ResultState)r.State, r.HomeGoals, r.AwayGoals, r.HomeGames, r.AwayGames, FixtureResult.ParseWinners(r.Winners))))];
+        return [.. rows.Select(r => r.ToPort())];
     }
 
-    public async Task<IReadOnlyList<Application.Integrity.SettlementDigest>> GetSettlementDigestAsync(IReadOnlyList<Guid> couponIds, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SettlementDigest>> GetSettlementDigestAsync(IReadOnlyList<Guid> couponIds, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
         var rows = await connection.QueryAsync<(Guid CouponId, int Version, byte Outcome, long Payout, DateTimeOffset SettledAt)>(
             new CommandDefinition(Sql.Get("Settle.IntegrityDigest"), new { Ids = couponIds }, cancellationToken: cancellationToken));
-        return [.. rows.Select(r => new Application.Integrity.SettlementDigest(r.CouponId, r.Version, (Domain.CouponOutcome)r.Outcome, r.Payout, r.SettledAt))];
+        return [.. rows.Select(r => new SettlementDigest(r.CouponId, r.Version, (CouponOutcome)r.Outcome, r.Payout, r.SettledAt))];
     }
 
-    public async Task<CouponStateView?> GetCouponStateAsync(Guid couponId, CancellationToken cancellationToken)
+    public async Task<StoredCouponState?> GetCouponStateAsync(Guid couponId, CancellationToken cancellationToken)
     {
         await using var connection = await connections.OpenAsync(cancellationToken);
         using var reader = await connection.QueryMultipleAsync(new CommandDefinition(Sql.Get("Settle.CouponState"), new { CouponId = couponId }, cancellationToken: cancellationToken));
@@ -55,7 +56,15 @@ public sealed class SqlSettlementStore(ISqlConnectionFactory connections, IOutbo
         var settlements = (await reader.ReadAsync<(int Version, byte Outcome, long Payout, DateTimeOffset SettledAt)>())
             .Select(s => new SettlementStateView(s.Version, ((CouponOutcome)s.Outcome).ToString(), s.Payout, s.SettledAt))
             .ToList();
-        var redis = progress is null ? -1 : await progress.ResolvedLegsAsync(couponId);
-        return new CouponStateView(c.CouponId, c.LegCount, c.SettlementPending, c.LastEvaluatedAt, legs, settlements, redis);
+        return new StoredCouponState(c.CouponId, c.LegCount, c.SettlementPending, c.LastEvaluatedAt, legs, settlements);
+    }
+
+    internal sealed record UnevaluatedLegRow(
+        Guid LegId, Guid CouponId, string FixtureId, string MarketId, string SelectionId, decimal Odds,
+        string ResultFixtureId, int ResultVersion, byte State, int HomeGoals, int AwayGoals, int? HomeGames, int? AwayGames, string? Winners, string? Builder)
+    {
+        public UnevaluatedLeg ToPort() => new(
+            new IndexedLeg(LegId, CouponId, FixtureId, MarketId, SelectionId, Odds, Builder: Builder),
+            new SqlSettlementTransaction.ResultRow(ResultFixtureId, ResultVersion, State, HomeGoals, AwayGoals, HomeGames, AwayGames, Winners).ToDomain());
     }
 }

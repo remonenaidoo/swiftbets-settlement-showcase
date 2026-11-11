@@ -10,6 +10,7 @@ public static class ApplicationRegistration
         services.AddScoped<IndexCouponHandler>();
         services.AddScoped<CashOutHandler>();
         services.AddScoped<CashoutStateQuery>();
+        services.AddScoped<CouponStateQuery>();
         services.AddScoped<EvaluateResultHandler>();
         services.AddScoped<CouponSettler>();
         services.AddScoped<SettleCouponHandler>();
