@@ -6,10 +6,7 @@ using SwiftBets.Settlement.Domain;
 
 namespace SwiftBets.Settlement.Application.Handlers;
 
-/// <summary>
-/// Stage two, the only writer of settlements. Reads the latest evaluation of every leg from SQL (the source of truth)
-/// under a coupon lock; a new settlement version is written only when the outcome or payout actually changes.
-/// </summary>
+/// <summary>Stage two and the only writer of settlements: a new version is written only when the outcome or payout changes.</summary>
 public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
 {
     public async Task<CouponSettledV2?> SettleAsync(Guid couponId)
@@ -31,7 +28,7 @@ public sealed class CouponSettler(ISettlementStore store, TimeProvider time)
         var legs = evaluations.OrderBy(e => e.Position).Select(e => new SettledLeg(e.Odds, e.Outcome, e.IsBanker)).ToList();
         var settlement = bets.Count == 0 ? CouponSettlement.Of(coupon.Stake, legs) : CouponSettlement.Of(bets, legs);
         var previous = await transaction.GetLatestSettlementAsync(couponId);
-        if (previous is not null && previous.Outcome == settlement.Outcome && previous.Payout == settlement.Payout)
+        if (previous?.Matches(settlement) == true)
         {
             await transaction.ClearPendingAsync(couponId);
             await transaction.CommitAsync();

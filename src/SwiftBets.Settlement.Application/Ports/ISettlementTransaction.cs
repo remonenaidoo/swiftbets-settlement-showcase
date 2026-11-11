@@ -8,14 +8,13 @@ public interface ISettlementTransaction : IAsyncDisposable
 {
     Task<bool> TryRecordInboxAsync(string consumer, Guid eventId);
 
-    /// <summary>Indexes a coupon with its legs and bets; false when it is already indexed (it was published as V1 and V2).</summary>
     /// <summary>Legs on a fixture with their coupon's placement time, for time-voids.</summary>
     Task<IReadOnlyList<TimedLeg>> GetTimedLegsForFixtureAsync(string fixtureId);
 
     /// <summary>The coupon's final state, read under the coupon lock taken by <see cref="LockCouponAsync"/>.</summary>
-    Task<Domain.FinalState?> GetFinalStateAsync(Guid couponId);
+    Task<FinalState?> GetFinalStateAsync(Guid couponId);
 
-    Task MarkFinalAsync(Guid couponId, Domain.FinalState state);
+    Task MarkFinalAsync(Guid couponId, FinalState state);
 
     Task<CashoutRecord?> GetCashoutAsync(Guid cashoutId);
 
@@ -24,11 +23,12 @@ public interface ISettlementTransaction : IAsyncDisposable
     /// <summary>Every leg of the coupon in position order, with its latest evaluation.</summary>
     Task<IReadOnlyList<CouponLeg>> GetCouponLegsAsync(Guid couponId);
 
+    /// <summary>Indexes a coupon with its legs and bets; false when it is already indexed.</summary>
     Task<bool> TryInsertCouponAsync(IndexedCoupon coupon, IReadOnlyList<IndexedLeg> legs, IReadOnlyList<SettlementBet> bets);
 
     Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId);
 
-    /// <summary>A coupon indexed from V1 takes placement's bet id when its V2 twin arrives; nothing else changes.</summary>
+    /// <summary>An already indexed single-bet coupon takes placement's bet id; nothing else changes.</summary>
     Task AdoptBetIdAsync(Guid couponId, SettlementBet bet);
 
     /// <summary>Reads results for the fixtures under lock, so a result landing concurrently is either seen here or sees these legs.</summary>

@@ -1,3 +1,4 @@
+using SwiftBets.Contracts.Offer;
 using SwiftBets.Contracts.Trading;
 using SwiftBets.Settlement.Application.Ports;
 using SwiftBets.Settlement.Domain;
@@ -15,7 +16,7 @@ public static class ManualResultRules
         _ => false,
     };
 
-    /// <summary>A time-void touches only coupons placed at or after the cut-off; an unknown placement time is never guessed.</summary>
+    // A time-void touches only coupons placed at or after the cut-off; an unknown placement time is never guessed.
     public static bool AppliesTo(StoredManualResult manual, DateTimeOffset? placedAt) =>
         manual.Action != ManualResultAction.TimeVoid || (manual.VoidFrom is { } from && placedAt >= from);
 
@@ -23,24 +24,31 @@ public static class ManualResultRules
         manual.Action is ManualResultAction.Void or ManualResultAction.TimeVoid ? LegOutcome.Void
         : leg.SelectionId == manual.WinningSelectionId ? LegOutcome.Won : LegOutcome.Lost;
 
-    /// <summary>
-    /// A bet builder takes a fixture or market result per component: components the result covers get its outcome, the
-    /// others their feed result (unknown until one lands). A coupon-scoped result judges the leg as a whole.
-    /// </summary>
+    /// <summary>A coupon-scoped result judges a bet builder as a whole; otherwise each component it covers takes its outcome and the rest wait for the feed.</summary>
     public static LegVerdict Verdict(StoredManualResult manual, IndexedLeg leg, FixtureResult? feed)
     {
-        ArgumentNullException.ThrowIfNull(manual);
-        ArgumentNullException.ThrowIfNull(leg);
         if (leg.BuilderLeg is not { } builder || manual.Scope == ManualResultScope.Coupon)
         {
             return new LegVerdict(Outcome(manual, leg));
         }
 
-        var voids = manual.Action is ManualResultAction.Void or ManualResultAction.TimeVoid;
-        return BuilderRules.Evaluate(builder, c =>
-            c.MarketId == manual.MarketId || (manual.MarketId is null && voids) ? Outcome(manual, leg with { MarketId = c.MarketId, SelectionId = c.SelectionId })
-            : manual.MarketId is null && c.SelectionId == manual.WinningSelectionId ? LegOutcome.Won
-            : feed is { IsSettleable: true } ? LegRules.Evaluate(c.MarketId, c.SelectionId, feed) : null);
+        var isVoid = manual.Action is ManualResultAction.Void or ManualResultAction.TimeVoid;
+        return BuilderRules.Evaluate(builder, ComponentOutcome);
+
+        LegOutcome? ComponentOutcome(BuilderComponentV1 component)
+        {
+            if (component.MarketId == manual.MarketId || (manual.MarketId is null && isVoid))
+            {
+                return Outcome(manual, leg with { MarketId = component.MarketId, SelectionId = component.SelectionId });
+            }
+
+            if (manual.MarketId is null && component.SelectionId == manual.WinningSelectionId)
+            {
+                return LegOutcome.Won;
+            }
+
+            return feed is { IsSettleable: true } ? LegRules.Evaluate(component.MarketId, component.SelectionId, feed) : null;
+        }
     }
 
     public static StoredManualResult From(ManualResultV1 manual, int version) =>

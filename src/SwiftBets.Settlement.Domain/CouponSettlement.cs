@@ -1,19 +1,15 @@
 using SwiftBets.Contracts.Placement;
+using SwiftBets.Contracts.Promotions;
 
 namespace SwiftBets.Settlement.Domain;
 
-/// <summary>A bet as placed: fold sizes over the coupon's non-banker legs, and the stake on each line.</summary>
-/// <summary>A bet as placed; an accumulator boost adds its percentage of the winnings when the bet wins.</summary>
+/// <summary>A bet as placed: fold sizes over the coupon's non-banker legs, the stake per line, and any accumulator boost on the winnings.</summary>
 public sealed record SettlementBet(Guid BetId, IReadOnlyList<int> Folds, long UnitStake, decimal AccaBoostPercent = 0m);
 
 /// <summary><see cref="Return"/> includes <see cref="BoostBonus"/>.</summary>
 public sealed record SettledBet(Guid BetId, CouponOutcome Outcome, int WinningLines, int VoidLines, int LosingLines, long Return, long BoostBonus = 0);
 
-/// <summary>
-/// Settles every line of every bet the way placement priced it (<see cref="SystemBets"/>): a lost leg loses the line,
-/// void legs count at odds 1.00 so an all-void line returns its stake, and each line rounds down to the minor unit.
-/// A bet or coupon is Void when all its lines are void, Lost when it returns nothing, and Won otherwise.
-/// </summary>
+/// <summary>Settles every line of every bet the way placement priced it: void legs count at 1.00 and each line rounds down to the minor unit.</summary>
 public sealed record CouponSettlement(CouponOutcome Outcome, decimal EffectiveOdds, long Payout, IReadOnlyList<SettledBet> Bets)
 {
     /// <summary>A single or accumulator: one line of every leg, the whole stake on it.</summary>
@@ -44,8 +40,6 @@ public sealed record CouponSettlement(CouponOutcome Outcome, decimal EffectiveOd
         new(CouponOutcome.CashedOut, stake == 0 ? 0m : decimal.Round((decimal)amount / stake, 6, MidpointRounding.ToZero), amount,
             [new SettledBet(betId, CouponOutcome.CashedOut, 0, 0, 0, amount)]);
 
-    public bool SameAs(CouponSettlement? other) => other is not null && other.Outcome == Outcome && other.Payout == Payout;
-
     private static SettledBet SettleBet(SettlementBet bet, List<SettledLeg> bankers, List<SettledLeg> others)
     {
         int won = 0, voided = 0, lost = 0;
@@ -73,7 +67,7 @@ public sealed record CouponSettlement(CouponOutcome Outcome, decimal EffectiveOd
         }
 
         var outcome = lost == 0 && won == 0 ? CouponOutcome.Void : returned == 0 ? CouponOutcome.Lost : CouponOutcome.Won;
-        var bonus = outcome == CouponOutcome.Won ? Contracts.Promotions.AccaBoost.Bonus(bet.UnitStake * (won + voided + lost), returned, bet.AccaBoostPercent) : 0;
+        var bonus = outcome == CouponOutcome.Won ? AccaBoost.Bonus(bet.UnitStake * (won + voided + lost), returned, bet.AccaBoostPercent) : 0;
         return new SettledBet(bet.BetId, outcome, won, voided, lost, returned + bonus, bonus);
     }
 }

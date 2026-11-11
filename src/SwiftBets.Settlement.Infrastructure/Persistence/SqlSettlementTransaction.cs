@@ -1,9 +1,11 @@
+using System.Globalization;
 using Dapper;
 using Microsoft.Data.SqlClient;
 using SwiftBets.BuildingBlocks.Core;
 using SwiftBets.BuildingBlocks.Outbox;
 using SwiftBets.BuildingBlocks.Persistence;
 using SwiftBets.Contracts.Messaging;
+using SwiftBets.Contracts.Trading;
 using SwiftBets.Settlement.Application.Ports;
 using SwiftBets.Settlement.Domain;
 
@@ -35,7 +37,7 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
 
     public async Task<IReadOnlyList<SettlementBet>> GetBetsAsync(Guid couponId) =>
         [.. (await connection.QueryAsync<(Guid BetId, string Folds, long UnitStake, decimal AccaBoostPercent)>(Sql.Get("Settle.BetsForCoupon"), new { CouponId = couponId }, transaction))
-            .Select(b => new SettlementBet(b.BetId, [.. b.Folds.Split(',').Select(f => int.Parse(f, System.Globalization.CultureInfo.InvariantCulture))], b.UnitStake, b.AccaBoostPercent))];
+            .Select(b => new SettlementBet(b.BetId, [.. b.Folds.Split(',').Select(f => int.Parse(f, CultureInfo.InvariantCulture))], b.UnitStake, b.AccaBoostPercent))];
 
     public async Task<IReadOnlyDictionary<string, FixtureResult>> LockResultsAsync(IReadOnlyList<string> fixtureIds) =>
         (await connection.QueryAsync<ResultRow>(Sql.Get("Settle.LockResults"), new { FixtureIds = fixtureIds }, transaction))
@@ -51,14 +53,14 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
     public async Task<IReadOnlyList<StoredManualResult>> GetManualResultsAsync(IReadOnlyList<string> fixtureIds) =>
         [.. (await connection.QueryAsync<(Guid ManualResultId, string FixtureId, byte Scope, byte Action, string? MarketId, Guid? CouponId, string? WinningSelectionId, DateTimeOffset? VoidFrom, int Version, DateTimeOffset IssuedAt)>(
             Sql.Get("Settle.ManualResultsForFixtures"), new { FixtureIds = fixtureIds }, transaction))
-            .Select(r => new StoredManualResult(r.ManualResultId, r.FixtureId, (SwiftBets.Contracts.Trading.ManualResultScope)r.Scope, (SwiftBets.Contracts.Trading.ManualResultAction)r.Action,
+            .Select(r => new StoredManualResult(r.ManualResultId, r.FixtureId, (ManualResultScope)r.Scope, (ManualResultAction)r.Action,
                 r.MarketId, r.CouponId, r.WinningSelectionId, r.VoidFrom, r.Version, r.IssuedAt))];
 
     public async Task<FixtureResult?> LockResultAsync(string fixtureId) =>
         (await connection.QuerySingleOrDefaultAsync<ResultRow>(Sql.Get("Settle.LockResult"), new { FixtureId = fixtureId }, transaction))?.ToDomain();
 
     public Task SaveResultAsync(FixtureResult result) =>
-        connection.ExecuteAsync(Sql.Get("Settle.SaveResult"), new { result.FixtureId, result.Version, State = (byte)result.State, result.HomeGoals, result.AwayGoals, result.HomeGames, result.AwayGames, Winners = result.WinnersText, Now = time.GetUtcNow() }, transaction);
+        connection.ExecuteAsync(Sql.Get("Settle.SaveResult"), new { result.FixtureId, result.Version, State = (byte)result.State, result.HomeGoals, result.AwayGoals, result.HomeGames, result.AwayGames, Winners = ResultRow.JoinWinners(result.Winners), Now = time.GetUtcNow() }, transaction);
 
     public async Task<IReadOnlyList<IndexedLeg>> GetLegsForFixtureAsync(string fixtureId) =>
         [.. await connection.QueryAsync<IndexedLeg>(Sql.Get("Settle.LegsForFixture"), new { FixtureId = fixtureId }, transaction)];
@@ -121,6 +123,10 @@ internal sealed class SqlSettlementTransaction(SqlConnection connection, SqlTran
 
     internal sealed record ResultRow(string FixtureId, int Version, byte State, int HomeGoals, int AwayGoals, int? HomeGames, int? AwayGames, string? Winners)
     {
-        public FixtureResult ToDomain() => new(FixtureId, Version, (ResultState)State, HomeGoals, AwayGoals, HomeGames, AwayGames, FixtureResult.ParseWinners(Winners));
+        public FixtureResult ToDomain() => new(FixtureId, Version, (ResultState)State, HomeGoals, AwayGoals, HomeGames, AwayGames,
+            string.IsNullOrEmpty(Winners) ? null : Winners.Split(','));
+
+        // Selection ids never contain a comma.
+        public static string? JoinWinners(IReadOnlyList<string>? winners) => winners is { Count: > 0 } ? string.Join(',', winners) : null;
     }
 }

@@ -5,16 +5,11 @@ namespace SwiftBets.Settlement.Domain;
 /// <summary>A leg's judgement: its outcome (null while a part is still unknown) and, for a repriced bet builder, its new odds.</summary>
 public sealed record LegVerdict(LegOutcome? Outcome, decimal? Odds = null);
 
-/// <summary>
-/// A bet builder settles as one leg: lost if any component lost, won if every component won. Void components are taken
-/// out and the rest repriced with the factors and margin the leg was accepted on; fewer than two left voids the leg.
-/// </summary>
+/// <summary>A bet builder settles as one leg; void components are dropped and the rest repriced, and fewer than two left voids it.</summary>
 public static class BuilderRules
 {
     public static LegVerdict Evaluate(BetBuilderLegV1 builder, Func<BuilderComponentV1, LegOutcome?> outcomeOf)
     {
-        ArgumentNullException.ThrowIfNull(builder);
-        ArgumentNullException.ThrowIfNull(outcomeOf);
         var outcomes = builder.Components.Select(c => (Component: c, Outcome: outcomeOf(c))).ToList();
         if (outcomes.Any(o => o.Outcome == LegOutcome.Lost))
         {
@@ -35,7 +30,6 @@ public static class BuilderRules
         return BetBuilderPricing.Reprice(builder, voided) is { } odds ? new LegVerdict(LegOutcome.Won, odds) : new LegVerdict(LegOutcome.Void);
     }
 
-    /// <summary>The leg against a feed result: a builder per component, any other leg by its selection.</summary>
     public static LegVerdict Evaluate(string marketId, string selectionId, BetBuilderLegV1? builder, FixtureResult result) =>
         builder is null ? new LegVerdict(LegRules.Evaluate(marketId, selectionId, result)) : Evaluate(builder, c => LegRules.Evaluate(c.MarketId, c.SelectionId, result));
 }
