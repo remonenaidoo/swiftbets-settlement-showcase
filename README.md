@@ -6,13 +6,14 @@ Settlement for SwiftBets: indexes open legs by fixture, evaluates legs when resu
 
 ## Hosts
 
-- `SwiftBets.Settlement.Worker`: consumers, reconciler and the operator refresh command.
+- `SwiftBets.Settlement.Worker`: consumers, reconciler, the cashout gRPC service and the operator endpoints.
 - `SwiftBets.Settlement.Migrator`: one-shot DbUp migrator.
 
 ## Data and events
 
 - **Owns:** SQL Server `SbSettlement` (leg index, results, evaluations, settlements, outbox, inbox) and Redis (progress counters and token sets).
-- **Events:** Consumes `placement.coupon-placed`, `offer.result-published`, `settlement.leg-evaluated`; produces `settlement.leg-evaluated`, `settlement.coupon-settled`, `settlement.stuck-coupon`.
+- **Events:** Consumes `placement.coupon-placed`, `offer.result-published`, `trading.manual-result`, `settlement.leg-evaluated`; produces `settlement.leg-evaluated`, `settlement.coupon-settled`, `settlement.stuck-coupon`, `trading.manual-result-rejected`.
+- **Cashout:** a gRPC service lets the cashout service read a coupon's state and settle it at an agreed amount.
 
 ## Layout
 

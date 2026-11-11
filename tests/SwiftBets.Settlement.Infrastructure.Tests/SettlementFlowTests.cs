@@ -22,7 +22,7 @@ using SwiftBets.Settlement.Infrastructure.Redis;
 
 namespace SwiftBets.Settlement.Infrastructure.Tests;
 
-/// <summary>Phase 2 gate scenarios on real SQL Server and Redis. Kafka is replaced by feeding each stage the events the previous one wrote to its outbox.</summary>
+// Real SQL Server and Redis; Kafka is replaced by feeding each stage the events the previous one wrote to its outbox.
 public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis)
 {
     [Fact]
@@ -341,7 +341,7 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
     }
 
     [Fact]
-    public async Task Poison_free_reconciler_pass_reports_nothing_when_all_is_settled()
+    public async Task A_reconciler_pass_reports_nothing_when_all_is_settled()
     {
         var flow = await Flow.CreateAsync(sql, redis);
         var coupon = flow.Acca(("f5", "under", 1.90m));
@@ -350,6 +350,27 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
 
         (await flow.Reconciler.ReconcileAsync(TimeSpan.Zero, CancellationToken.None)).ShouldBe(0);
         (await flow.OutboxCountAsync("settlement.stuck-coupon")).ShouldBe(0);
+    }
+
+    [Fact]
+    public async Task Coupon_state_shows_sql_evaluations_alongside_redis_progress()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+        var coupon = flow.Acca(("st1", "home", 2.00m), ("st2", "home", 2.00m));
+        await flow.PlaceAsync(coupon);
+        await flow.ResultAsync("st1", 1, ResultStatus.Official, 1, 0);
+
+        var state = (await flow.StateQuery.GetAsync(coupon.CouponId, CancellationToken.None)).ShouldNotBeNull();
+
+        (state.LegCount, state.RedisResolvedLegs, state.Settlements.Count).ShouldBe((2, 1, 0));
+    }
+
+    [Fact]
+    public async Task Coupon_state_of_an_unindexed_coupon_is_null()
+    {
+        var flow = await Flow.CreateAsync(sql, redis);
+
+        (await flow.StateQuery.GetAsync(Guid.NewGuid(), CancellationToken.None)).ShouldBeNull();
     }
 
     private sealed class Flow
@@ -368,7 +389,10 @@ public sealed class SettlementFlowTests(SqlServerFixture sql, RedisFixture redis
             _redis = redis;
             Settler = new CouponSettler(store, TimeProvider.System);
             Reconciler = new ReconcileHandler(store, counter, Settler, TimeProvider.System);
+            StateQuery = new CouponStateQuery(store, counter);
         }
+
+        public CouponStateQuery StateQuery { get; }
 
         public CouponSettler Settler { get; }
 
